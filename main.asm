@@ -28,54 +28,25 @@ WaitVBlank:
     ld de, Tiles
     ld hl, $9000
     ld bc, TilesEnd - Tiles
-CopyTiles:
-    ld a, [de]
-    ld [hli], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jp nz, CopyTiles
+	call Memcopy
 
     ; Copy the tilemap.
     ld de, Tilemap
     ld hl, $9800
     ld bc, TilemapEnd - Tilemap
-CopyTilemap:
-    ld a, [de]
-    ld [hli], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jp nz, CopyTilemap
+	call Memcopy
 
     ; Copy the paddle tile.
     ld de, Paddle
     ld hl, $8000
     ld bc, PaddleEnd - Paddle
-CopyPaddle:
-    ld a, [de]
-    ld [hli], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jp nz, CopyPaddle
+	call Memcopy
 
     ; Copy the ball tile.
     ld de, Ball
     ld hl, $8010
     ld bc, BallEnd - Ball
-CopyBall:
-    ld a, [de]
-    ld [hli], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jp nz, CopyBall
-
+	call Memcopy
 
     ; Clear all 160 bytes of OAM.
     ld a, 0
@@ -151,6 +122,20 @@ WaitVBLank2:
     ld [_OAMRAM + 5], a
 
     jp Main
+
+; Copy bytes from one area to another.
+; @param de: Source
+; @param hl: Destination
+; @param bc: Length
+Memcopy:
+	ld a, [de]
+	ld [hli], a
+	inc de
+	dec bc
+	ld a, b
+	or a, c
+	jp nz, Memcopy
+	ret
 
 Tiles:
 	dw `33333333
