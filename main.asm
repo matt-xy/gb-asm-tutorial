@@ -68,15 +68,21 @@ ClearOam:
     ld [hli], a
 
     ; Place a second sprite.
-    ld hl, _OAMRAM + 4
+    ; ld hl, _OAMRAM + 4
     ld a, 100 + 16
     ld [hli], a
-    ld a, 80 + 8
+    ld a, 32 + 8
     ld [hli], a
     ld a, 1 ; Tile ID
     ld [hli], a
     ld a, 0
     ld [hli], a
+
+	; The ball starts out going up and to the right.
+	ld a, 1
+	ld [wBallMomentumX], a
+	ld a, -1
+	ld [wBallMomentumY], a
 
     ; Turn the LDC on.
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON
@@ -89,8 +95,10 @@ ClearOam:
     ld [rOBP0], a ; Set object palette.
 
     ; Initialise global variales.
+    ; ld [wFrameCounter], a
     ld a, 0
-    ld [wFrameCounter], a
+	ld [wCurKeys], a
+	ld [wNewKeys], a
 
 Main:
     ld a, [rLY]
@@ -101,27 +109,151 @@ WaitVBLank2:
     cp 144
     jp c, WaitVBLank2
 
-    ld a, [wFrameCounter]
-    inc a
-    ld [wFrameCounter], a
-    cp a, 15 ; Every 15 frames, run he following code.
-    jp nz, Main ; In loop for 15 frames.
+	; Add the ball's momentum to its position in OAN.
+	ld a, [wBallMomentumX]
+	ld b, a
+	ld a, [_OAMRAM + 5]
+	add a, b
+	ld [_OAMRAM + 5], a
+
+	ld a, [wBallMomentumY]
+	ld b, a
+	ld a, [_OAMRAM + 4]
+	add a, b
+	ld [_OAMRAM + 4], a
+
+BounceOnTop:
+	; Remember to offset the OAM position!
+	; (8, 16) in OAM coordinates is (0, 0) on the screen.
+	ld a, [_OAMRAM + 4]
+	sub a, 16 + 1
+	ld c, a
+	ld a, [_OAMRAM + 5]
+	sub a, 8
+	ld b, a
+	call GetTileByPixel ; Returns tile address in hl
+	ld a, [hl]
+	call IsWallTile
+	jp nz, BounceOnRight
+	ld a, 1
+	ld [wBallMomentumY], a
+BounceOnRight:
+	ld a, [_OAMRAM + 4]
+	sub a, 16
+	ld c, a
+	ld a, [_OAMRAM + 5]
+	sub a, 8 - 1
+	ld b, a
+	call GetTileByPixel
+	ld a, [hl]
+	call IsWallTile
+	jp nz, BounceOnLeft
+	ld a, -1
+	ld [wBallMomentumX], a	
+BounceOnLeft:
+	ld a, [_OAMRAM + 4]
+	sub a, 16
+	ld c, a
+	ld a, [_OAMRAM + 5]
+	sub a, 8 + 1
+	ld b, a
+	call GetTileByPixel
+	ld a, [hl]
+	call IsWallTile
+	jp nz, BounceOnBottom
+	ld a, 1
+	ld [wBallMomentumX], a
+BounceOnBottom:
+	; ld a, [_OAMRAM + 4]
+	; sub a, 16 - 1
+	; ld c, a
+	; ld a, [_OAMRAM + 5]
+	; sub a, 8
+	; ld b, a
+	; call GetTileByPixel
+	; ld a, [hl]
+	; call IsWallTile
+	; jp nz, BounceDone
+	; ld a, -1
+	; ld [wBallMomentumY], a
+BounceDone:
+
+; First, check if the ball is low enough to bounce off the paddle.
+PaddleBounce:	
+	ld a, [_OAMRAM]
+	ld b, a
+	ld a, [_OAMRAM + 4]
+	add a, 6
+	cp a, b
+	jp nz, PaddleBounceDone ; If the ball isn't at the same Y position as the paddle, it can't jump.
+	
+	; Now, compare the X positions.
+	ld a, [_OAMRAM + 5] ; Ball's X position.
+	ld b, a
+	ld a, [_OAMRAM + 1] ; Paddle's X position.
+	sub a, 16
+	cp a, b
+	jp nc, PaddleBounceDone ; c if a < b, 0 if a >= b
+	
+	add a, 8 + 16 ; 8 to undo, 16 as the width.
+	cp a, b
+	jp c, PaddleBounceDone
+
+	ld a, -1
+	ld [wBallMomentumY], a
+PaddleBounceDone:
+
+	; Check the current keys every frame and move left or right.
+	call UpdateKeys
+
+	; First, check if the left button is pressed.
+CheckLeft:
+	ld a, [wCurKeys]
+	and a, PADF_LEFT
+	jp z, CheckRight
+Left:
+	ld a, [_OAMRAM + 1] ; Get the current X coordinate.
+	dec a
+	; If we've already hit the edge of the playfield, don't move.
+	cp a, 15
+	jp z, Main
+	ld [_OAMRAM + 1], a ; Reload decremented X coordinate.
+	jp Main
+
+; Then, check the right button.
+CheckRight:
+	ld a, [wCurKeys]
+	and a, PADF_RIGHT
+	jp z, Main
+Right:
+	ld a, [_OAMRAM + 1]
+	inc a
+	cp a, 105
+	jp z, Main
+	ld [_OAMRAM + 1], a
+	jp Main
+
+    ; ld a, [wFrameCounter]
+    ; inc a
+    ; ld [wFrameCounter], a
+    ; cp a, 15 ; Every 15 frames, run he following code.
+    ; jp nz, Main ; In loop for 15 frames.
 
     ; 15 frames is up.
     ; Reset the frame counter back to 0.
-    ld a, 0
-    ld [wFrameCounter], a
+    ; ld a, 0
+    ; ld [wFrameCounter], a
 
     ; Move the paddle one pixel to the right.
-    ld a, [_OAMRAM + 1]
-    inc a
-    ld [_OAMRAM + 1], a
-
-    ld a, [_OAMRAM + 5]
-    dec a
-    ld [_OAMRAM + 5], a
+    ; ld a, [_OAMRAM + 1]
+    ; inc a
+    ; ld [_OAMRAM + 1], a
 
     jp Main
+
+; +-----------------+
+; |    FUNCTIONS    |
+; +-----------------+
 
 ; Copy bytes from one area to another.
 ; @param de: Source
@@ -136,6 +268,98 @@ Memcopy:
 	or a, c
 	jp nz, Memcopy
 	ret
+
+UpdateKeys:
+	ld a, P1F_GET_BTN
+	call .onenibble
+	ld b, a ; B7-4 = 1; B3-0 = unpressed buttons
+
+	; Poll the other half
+	ld a, P1F_GET_DPAD
+	call .onenibble
+	swap a ; A7-4 = unpressed directions; A3-0 = 1
+	xor a, b ; A = pressed buttons + directions
+	ld b, a ; B = pressed buttons + directions
+
+	; And release the controller
+	ld a, P1F_GET_NONE
+	ldh [rP1], a
+
+	; Combine with previous wCurKeys to make wNewKeys
+	ld a, [wCurKeys]
+	xor a, b ; A = keys that changed state
+	and a, b ; A = keys that changed to pressed
+	ld [wNewKeys], a
+	ld a, b
+	ld [wCurKeys], a
+	ret
+
+.onenibble
+	ldh [rP1], a ; switch the key matrix
+	call .knownret ; burn 10 cycles calling a known ret
+	ldh a, [rP1] ; ignore value while waiting for the key matrix to settle
+	ldh a, [rP1]
+	ldh a, [rP1] ; this read counts
+	or a, $F0 ; A7-4 = 1, A3-0 = unpressed key
+.knownret
+	ret
+
+; Convert a pixel position to a tilemap address.
+; hl = $9800 + X + Y * 32
+; @param b: X
+; @param c: Y
+; @return hl: tile address
+GetTileByPixel:
+	; First, we need to divide by 8 to convert a pixel position to a tile position.
+	; After this we want to multiply the Y position by 32.
+	; These operations effectively cancel out so we only need to mask the Y value.
+	ld a, c
+	and a, %11111000
+	ld l, a
+	ld h, 0
+	; Now we have the position * 8 in hl.
+	add hl, hl ; position * 16
+	add hl, hl ; position * 32
+	; Convert the X position to an offset.
+	ld a, b
+	srl a ; a / 2
+	srl a ; a / 4
+	srl a ; a / 8
+	; Add the two offsets together.
+	add a, l
+	ld l, a
+	adc a, h
+	sub a, l
+	ld h, a
+	; Add the offset to the tilemap's base address.
+	ld bc, $9800
+	add hl, bc
+	ret
+
+; @param a: tile ID
+; @return z: set if a is a wall.
+IsWallTile:
+	cp a, $00
+	ret z
+	cp a, $01
+	ret z
+	cp a, $02
+	ret z
+	cp a, $03
+	ret z
+	cp a, $04
+	ret z
+	cp a, $05
+	ret z
+	cp a, $06
+	ret z
+	cp a, $07
+	ret z
+	ret ; Did not hit a wall and don't need to bounce.
+
+; +----------------+
+; |    GRAPHICS    |
+; +----------------+
 
 Tiles:
 	dw `33333333
@@ -381,15 +605,28 @@ Paddle:
 PaddleEnd:
 
 Ball:
-    dw `11111111
-    dw `10000001
-    dw `10011001
-    dw `10011001
-    dw `10011001
-    dw `10011001
-    dw `10000001
-    dw `11111111
+    dw `00033000
+    dw `00322300
+    dw `03222230
+    dw `03222230
+    dw `00322300
+    dw `00033000
+    dw `00000000
+    dw `00000000
 BallEnd:    
-    
-SECTION "Counter", WRAM0
-wFrameCounter: db
+
+; +--------------+
+; |    MEMORY    |
+; +--------------+
+
+; db is "Define Byte", reserving only one byte of RAM
+SECTION "Input Variables", WRAM0
+wCurKeys: db
+wNewKeys: db
+
+SECTION "Ball Data", wram0
+wBallMomentumX: db
+wBallMomentumY: db
+
+; SECTION "Counter", WRAM0
+; wFrameCounter: db
